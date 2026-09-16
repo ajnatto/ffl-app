@@ -132,6 +132,20 @@ button { font-family: inherit; }
 .p-head .pr { color: var(--mut); font-size: 12.5px; }
 .p-body { max-width: 560px; margin: 0 auto; padding: 12px 14px; }
 .p-dots { display: flex; gap: 1px; justify-content: center; margin: 4px 0 10px; flex-wrap: wrap; }
+
+/* Apple Watch workout prompt, shown when a session opens.
+   The watch samples heart rate roughly every 5 seconds during a workout versus every few
+   minutes otherwise. That is the whole difference between a session that can be matched
+   against heart rate afterwards and one that cannot — the first live session produced no
+   samples at all for its two opening 30-second blocks. */
+.watchhint { display: flex; gap: 9px; align-items: center; margin: 0 14px 10px;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--bg2); font-size: 12.5px; line-height: 1.4; color: var(--mut); }
+.watchhint .whi { font-size: 17px; flex: none; }
+.watchhint b { color: var(--txt); font-weight: 600; }
+.watchhint .abtn { flex: none; }
+.watchhint .whx { flex: none; background: none; border: 0; color: var(--dim);
+  font-size: 15px; cursor: pointer; padding: 0 2px; }
 .p-dots button { background: none; border: none; padding: 8px 3px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; }
 .p-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--line); }
@@ -359,7 +373,7 @@ svg.still { width: 100%; background: var(--bg3); border: 1px solid var(--line); 
 
 <div id="scr-more" class="hidden">
   <div class="top"><div class="top-text"><h1>More</h1><div class="sub">safety, your videos, your data</div>
-    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-16 06:33 UTC · 2d13f4d</div></div>
+    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-16 06:58 UTC · b7da6f0</div></div>
     <button class="top-back" data-back aria-label="Back to Today">&#8249;</button></div>
   <div class="screen">
     <div class="card"><h3>&#x1FA78; Blood pressure rules</h3><ul class="safety" id="more-safety"></ul></div>
@@ -380,6 +394,11 @@ svg.still { width: 100%; background: var(--bg3); border: 1px solid var(--line); 
         <span class="note" id="voice-diag" style="flex:1"></span>
       </div>
       <p class="note" style="margin-top:4px">If <b>Test voice</b> is silent but the beeps work, speech is being blocked by the phone rather than the app — on iPhone check the silent switch and that the ringer volume is up. The line above reports what the browser thinks.</p>
+    </div>
+    <div class="card"><h3>&#x231A; Apple Watch heart rate</h3>
+      <p class="note">Starting a <b>Workout</b> on the watch makes it sample heart rate every ~5s instead of every few minutes, and records the session in Apple Health. Without it, short blocks can fall entirely between samples — the first live session produced <b>no heart-rate data at all</b> for its two opening 30-second blocks.</p>
+      <div class="eq-item" id="toggle-watchhint" style="margin-top:8px"><span class="box"></span>Remind me when a session starts</div>
+      <p class="note" style="margin-top:4px">The app cannot start a workout for you — Apple exposes no such API — so this is a prompt, not an automation.</p>
     </div>
     <div class="card"><h3>&#x1F3AC; Your own clips</h3>
       <p class="note">Every exercise screen has an <b>＋ Add your clip</b> button — pick a video from your photo library and it's saved inside the app and plays right under the demo. Film yourself doing a set and compare against the animation; that's the best form check there is.<br><br>
@@ -440,6 +459,12 @@ svg.still { width: 100%; background: var(--bg3); border: 1px solid var(--line); 
     <button class="x next" id="p-next-top" aria-label="Next exercise">→</button>
   </div>
   <div class="p-dots" id="p-dots"></div>
+  <div class="watchhint hidden" id="p-watchhint">
+    <span class="whi">&#x231A;</span>
+    <span class="grow">Start a <b>Workout</b> on your Apple Watch. It samples heart rate every ~5s instead of every few minutes, which is what lets the session be matched against it later.</span>
+    <button class="abtn" id="wh-never">don't show again</button>
+    <button class="whx" id="wh-close" aria-label="Dismiss">&#x2715;</button>
+  </div>
   <div class="p-body" id="p-body"></div>
 </div>
 
@@ -4008,6 +4033,13 @@ const TPL = (() => {
     aa.classList.toggle('on', !!ST.autoAdvance);
     aa.querySelector('.box').textContent = ST.autoAdvance ? '✓' : '';
     aa.onclick = () => { ST.autoAdvance = !ST.autoAdvance; saveState(); renderMore(); };
+    const wh = document.getElementById('toggle-watchhint');
+    if (wh) {
+      const on = !(ST.pref && ST.pref.watchHint === 'off');
+      wh.classList.toggle('on', on);
+      wh.querySelector('.box').textContent = on ? '✓' : '';
+      wh.onclick = () => { ST.pref.watchHint = on ? 'off' : 'on'; saveState(); renderMore(); };
+    }
     /* Break lengths — two values now: the normal break, and a longer one when the next
        exercise needs a set-up change (going to the floor, or fetching a chair/step).
        5s covers most transitions; 10s gives time to get down or fetch something. */
@@ -4108,6 +4140,23 @@ const TPL = (() => {
     if (document.visibilityState === 'visible' && PL) grabWakeLock();
   });
 
+  /* ---------- Apple Watch workout prompt ----------
+     The watch samples heart rate about every 5 seconds during a Workout and every few
+     minutes otherwise. The first live session proved why that matters: the two opening
+     30-second blocks produced no heart-rate samples at all, so the very start of every
+     session would be unmappable. The app cannot start a workout on the watch (there is no
+     API for it), so it asks. */
+  const WATCH_HINT_SKIP = new Set(['desk', 'night', 'rest']);
+  function renderWatchHint(key) {
+    const el = document.getElementById('p-watchhint');
+    if (!el) return;
+    const s = sessionFor(key);
+    const want = !WATCH_HINT_SKIP.has(key)
+              && !(ST.pref && ST.pref.watchHint === 'off')
+              && !!s && (s.blocks || []).length > 0;
+    el.classList.toggle('hidden', !want);
+  }
+
   function openPlayer(key) {
     /* startedAt is recorded so a saved session can be aligned with Apple Health
        heart-rate samples. Previously only the completion time was kept.
@@ -4139,6 +4188,7 @@ const TPL = (() => {
     /* decode this session's announcement clips now, while the opening gesture is fresh,
        so the first break can play real audio instead of falling back to speech */
     preloadVoice(key);
+    renderWatchHint(key);
     renderBlock();
   }
   function closePlayer(finished) {
@@ -4179,6 +4229,18 @@ const TPL = (() => {
     show('today');
   }
   $('#p-close').onclick = () => closePlayer(false);
+  /* which of the watch prompt's two buttons is which: ✕ hides it for this session only,
+     "don't show again" is a standing preference (toggleable in More). */
+  const whClose = document.getElementById('wh-close');
+  if (whClose) whClose.onclick = () => document.getElementById('p-watchhint').classList.add('hidden');
+  const whNever = document.getElementById('wh-never');
+  if (whNever) whNever.onclick = () => {
+    ST.pref.watchHint = 'off';
+    saveState();
+    const el = document.getElementById('p-watchhint');
+    if (el) el.classList.add('hidden');
+    toast('Watch reminder off — turn it back on in More');
+  };
 
   function stepVal(cur, dir, step, min) { return Math.max(min, Math.round((cur + dir * step) * 10) / 10); }
 
