@@ -373,7 +373,7 @@ svg.still { width: 100%; background: var(--bg3); border: 1px solid var(--line); 
 
 <div id="scr-more" class="hidden">
   <div class="top"><div class="top-text"><h1>More</h1><div class="sub">safety, your videos, your data</div>
-    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-17 12:12 UTC · cc0f2d7</div></div>
+    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-17 12:24 UTC · 0c3fdc0</div></div>
     <button class="top-back" data-back aria-label="Back to Today">&#8249;</button></div>
   <div class="screen">
     <div class="card"><h3>&#x1FA78; Blood pressure rules</h3><ul class="safety" id="more-safety"></ul></div>
@@ -466,6 +466,19 @@ svg.still { width: 100%; background: var(--bg3); border: 1px solid var(--line); 
     <button class="whx" id="wh-close" aria-label="Dismiss">&#x2715;</button>
   </div>
   <div class="p-body" id="p-body"></div>
+</div>
+
+<!-- Day preview. Opened from the week strip on the Today screen: tapping a day shows what
+     that day actually asks for, and offers to start it — so a session can be previewed, or
+     done on a different day, without going near the editor. The Plan tab stays the place to
+     CHANGE a day; this is the place to READ one. -->
+<div id="dayview" class="player hidden">
+  <div class="p-head">
+    <button class="x" id="dv-close">&#x2715;</button>
+    <div class="grow"><div class="t" id="dv-title"></div></div>
+    <button class="abtn" id="dv-edit">Edit</button>
+  </div>
+  <div class="p-body" id="dv-body"></div>
 </div>
 
 <script>
@@ -4070,7 +4083,8 @@ const TPL = (() => {
       dayLogs.forEach(l => l.sets.forEach(s2 => { sets++; volume += (s2.w || 0) * (s2.r || 0); }));
       const past = k < todayKey, isToday = k === todayKey, isRest = ST.planDays[i] === 'rest';
       const cls = `wd ${isToday ? 'today' : ''} ${main ? 'done' : past && !isRest ? 'miss' : ''}`;
-      return `<div class="${cls}" title="${DAY_NAMES[i]}: ${sess ? sess.title : 'Rest'}">
+      return `<div class="${cls}" data-day="${i}" style="cursor:pointer"
+          title="${DAY_NAMES[i]}${sess ? ' — ' + sess.title : ''} · tap to see the plan">
         <span class="wl">${LETTERS[i]}</span>
         <span class="wic">${main ? '✓' : (sess ? (ICONS[sess.icon] || '') : '')}</span>
         <span class="wm ${morn ? 'on' : ''}">●</span></div>`;
@@ -4109,6 +4123,60 @@ const TPL = (() => {
       weekAnalyticsHtml() +
       `<p class="note" style="margin-top:14px">\u{1F4A1} ${SAFETY_NOTES[new Date().getDate() % SAFETY_NOTES.length]}</p>`;
     document.querySelectorAll('[data-start]').forEach(b => b.onclick = () => openPlayer(b.dataset.start));
+    document.querySelectorAll('#today-cards [data-day]').forEach(el =>
+      el.onclick = () => openDayView(+el.dataset.day));
+  }
+
+  /* ---------- DAY PREVIEW ----------
+     Read-only view of what a given day of the week actually asks for. Exists because the Plan
+     tab's rows open the EDITOR, which is the wrong first step when all you want to know is
+     "what am I supposed to do on Thursday?" — and because a session you want to do on a
+     different day should be previewable without editing the week. */
+  function openDayView(dayIdx) {
+    const key = ST.planDays[dayIdx];
+    const sess = sessionFor(key);
+    const isToday = dayIdx === weekIdx;
+    $('#dv-title').textContent = `${DAY_NAMES[dayIdx]}${isToday ? ' · today' : ''} — ${sess ? sess.title : 'Rest day'}`;
+
+    /* did it already happen? a finished non-daily log on that date */
+    const dates = weekDates(0);
+    const k = dates[dayIdx];
+    const doneLogs = (ST.logs || []).filter(l => l.d === k && l.fin && !DAILY_KEYS.has(l.s));
+
+    const blocks = getEffBlocks(key);
+    const list = blocks.length
+      ? blocks.map(b => {
+          const id = blockExercise(b);
+          const ex = EXERCISES[id];
+          const missing = id === NEEDS_EQ;
+          const target = b.target ? `${b.sets ? b.sets + ' × ' : ''}${b.target}${ex && ex.unit === 'mins' ? ' min' : ''}` : '';
+          return `<div class="eq-item" style="cursor:default;${missing ? 'opacity:.72' : ''}">
+            <span class="box">${missing ? '!' : ''}</span>
+            <div class="grow"><div>${ex ? ex.name : id}</div>
+            ${missing ? `<div class="bs">needs ${missingForBlock(b).join(', ') || 'equipment'}</div>` : ''}</div>
+            <span class="bs">${target}</span></div>`;
+        }).join('')
+      : `<p class="note">${key === 'rest' ? 'Rest day — only the daily routines. Recovery is part of the plan.' : 'No blocks.'}</p>`;
+
+    const startBtn = sess && key !== 'rest'
+      ? `<button class="btn" id="dv-start" style="width:100%;margin-top:14px">${isToday ? 'Start' : 'Do this ' + DAY_NAMES[dayIdx] + ' session now'}</button>`
+      : '';
+
+    $('#dv-body').innerHTML = `
+      <div class="card">
+        <div class="meta">${isToday ? 'Today' : DAY_NAMES[dayIdx]} · ${k}${doneLogs.length ? ' · <b style="color:var(--good)">done</b>' : ''}</div>
+        <div style="margin-top:10px">${list}</div>
+        ${startBtn}
+        ${doneLogs.length ? `<p class="note" style="margin-top:10px">Completed ${doneLogs.length === 1 ? '' : doneLogs.length + '× '}already${doneLogs[0].sets ? ' · ' + doneLogs[0].sets.length + ' sets logged' : ''}.</p>` : ''}
+      </div>
+      <p class="note">Daily routines — morning mobility, the walk, the desk break, the bedtime routine — run every day and are on the Today screen, not here.</p>`;
+
+    $('#dv-close').onclick = () => { $('#dayview').classList.add('hidden'); document.body.style.overflow = ''; };
+    $('#dv-edit').onclick = () => { $('#dayview').classList.add('hidden'); document.body.style.overflow = ''; show('plan'); openSessionEditor(dayIdx); };
+    const sb = document.getElementById('dv-start');
+    if (sb) sb.onclick = () => { $('#dayview').classList.add('hidden'); document.body.style.overflow = ''; openPlayer(key); };
+    $('#dayview').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
   }
   function calcStreak() {
     const has = new Set(ST.logs.map(l => l.d));
