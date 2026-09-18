@@ -373,7 +373,7 @@ svg.still { width: 100%; background: var(--bg3); border: 1px solid var(--line); 
 
 <div id="scr-more" class="hidden">
   <div class="top"><div class="top-text"><h1>More</h1><div class="sub">safety, your videos, your data</div>
-    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-17 12:24 UTC · 0c3fdc0</div></div>
+    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-18 10:51 UTC · b5b3d05</div></div>
     <button class="top-back" data-back aria-label="Back to Today">&#8249;</button></div>
   <div class="screen">
     <div class="card"><h3>&#x1FA78; Blood pressure rules</h3><ul class="safety" id="more-safety"></ul></div>
@@ -2077,6 +2077,17 @@ const WALK = { title: 'Daily walk (after Fajr)', icon: 'walk', color: '#4a9d6b',
    WEEK_V1 and WEEK_V2 exist purely so the migration in app.js can tell an untouched week from
    one you edited by hand in the Plan tab. */
 const WEEK = ['strengthA', 'martial', 'strengthB', 'back1', 'strengthC', 'ems', 'rest'];
+
+/* Where each day is meant to happen - Mon..Sun.
+   Friday is a HOME day by plan, not by accident: the gym does not open until 13:00 and a
+   session that is not in the morning does not happen. Marking it here means Friday resolves
+   against home equipment even when the profile says a full gym is available, instead of
+   prescribing a box for incline push-ups and a bench for hip thrusts that are not there.
+   'auto' = use whatever equipment profile is switched on. */
+const DAY_VENUE = ['auto', 'auto', 'auto', 'auto', 'home', 'auto', 'auto'];
+
+/* True when this weekday is pinned to home equipment. */
+function isHomeDay(dayIdx) { return DAY_VENUE[dayIdx] === 'home'; }
 const WEEK_V2 = ['strengthA', 'martial', 'strengthB', 'cardio1', 'strengthC', 'ems', 'rest'];
 const WEEK_V1 = ['strengthA', 'cardio1', 'strengthB', 'martial', 'strengthC', 'cardio2', 'rest'];
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -3769,10 +3780,19 @@ const TPL = (() => {
   const isTimed = ex => ['secs', 'secs_side', 'mins'].includes(EXERCISES[ex].unit);
 
   /* ---------- equipment resolution ---------- */
+  /* Which weekday we are currently resolving for, or null for 'wherever the profile says'.
+     Set before rendering a day or starting a session; reset after. This is what lets Friday
+     resolve against home gear while the profile still claims a full gym. It is deliberately
+     NOT read by the equipment screen, which always edits the profile itself. */
+  let ACTIVE_DAY = null;
+  function gymNow() {
+    return (ACTIVE_DAY != null && isHomeDay(ACTIVE_DAY)) ? HOME_GYM : ST.gym;
+  }
   function available(exId) {
     const ex = EXERCISES[exId];
     const sets = [ex.equipment, ...(ex.altEquipment || [])];
-    return sets.some(req => req.every(e => ST.gym.includes(e) || e === 'mat'));
+    const gym = gymNow();
+    return sets.some(req => req.every(e => gym.includes(e) || e === 'mat'));
   }
   function resolveSlot(slotId) {
     const slot = SLOTS[slotId];
@@ -3795,7 +3815,8 @@ const TPL = (() => {
       const ex = EXERCISES[id];
       if (!ex) continue;
       for (const req of [ex.equipment, ...(ex.altEquipment || [])]) {
-        for (const e of req) if (e !== 'mat' && !ST.gym.includes(e)) missing.add(e);
+        const gym = gymNow();
+        for (const e of req) if (e !== 'mat' && !gym.includes(e)) missing.add(e);
       }
     }
     return EQUIPMENT.filter(e => missing.has(e.id)).map(e => e.label);
@@ -4109,6 +4130,7 @@ const TPL = (() => {
     </div>`;
   }
   function renderToday() {
+    ACTIVE_DAY = weekIdx;
     const dayName = DAY_NAMES[weekIdx];
     const sessionKey = ST.planDays[weekIdx];
     $('#today-date').textContent = `${dayName} · ${new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}`;
@@ -4117,7 +4139,7 @@ const TPL = (() => {
     $('#today-cards').innerHTML =
       sessionCard('morning') +
       sessionCard('walk', 'Daily walk · after Fajr, before the gym opens') +
-      sessionCard(sessionKey, `Today: ${sessionFor(sessionKey).title}`) +
+      sessionCard(sessionKey, `Today: ${sessionFor(sessionKey).title}${isHomeDay(weekIdx) ? ' \u00b7 at home' : ''}`) +
       sessionCard('desk', 'Desk break · every 60-90 min of sitting') +
       sessionCard('night') +
       weekAnalyticsHtml() +
@@ -4133,6 +4155,7 @@ const TPL = (() => {
      "what am I supposed to do on Thursday?" — and because a session you want to do on a
      different day should be previewable without editing the week. */
   function openDayView(dayIdx) {
+    ACTIVE_DAY = dayIdx;
     const key = ST.planDays[dayIdx];
     const sess = sessionFor(key);
     const isToday = dayIdx === weekIdx;
@@ -4164,7 +4187,7 @@ const TPL = (() => {
 
     $('#dv-body').innerHTML = `
       <div class="card">
-        <div class="meta">${isToday ? 'Today' : DAY_NAMES[dayIdx]} · ${k}${doneLogs.length ? ' · <b style="color:var(--good)">done</b>' : ''}</div>
+        <div class="meta">${isToday ? 'Today' : DAY_NAMES[dayIdx]} · ${k}${isHomeDay(dayIdx) ? ' · at home' : ''}${doneLogs.length ? ' · <b style="color:var(--good)">done</b>' : ''}</div>
         <div style="margin-top:10px">${list}</div>
         ${startBtn}
         ${doneLogs.length ? `<p class="note" style="margin-top:10px">Completed ${doneLogs.length === 1 ? '' : doneLogs.length + '× '}already${doneLogs[0].sets ? ' · ' + doneLogs[0].sets.length + ' sets logged' : ''}.</p>` : ''}
@@ -4204,6 +4227,7 @@ const TPL = (() => {
   function renderPlan() {
     const days = ST.planDays;
     $('#plan-week').innerHTML = days.map((key, i) => {
+      ACTIVE_DAY = i;                     // each row resolves for its own day (Friday = home)
       const s = sessionFor(key);
       const icon = s ? (ICONS[s.icon] || '') : '';
       const title = s ? s.title : 'Rest day';
@@ -4213,7 +4237,7 @@ const TPL = (() => {
         : '';
       return `<div class="wk ${i === weekIdx ? 'today' : ''}" data-edit="${i}" style="cursor:pointer">
         <div class="dn">${DAY_NAMES[i].slice(0, 3)}</div>
-        <div class="grow"><div class="ti">${icon} ${title}</div>
+        <div class="grow"><div class="ti">${icon} ${title}${isHomeDay(i) ? ' <span class="bs">at home</span>' : ''}</div>
         ${names ? `<div class="bs">${names}${effBlocks.length > 3 ? ' …' : ''}</div>` : ''}</div>
         <span style="color:var(--dim);font-size:18px">›</span>
       </div>`;
@@ -4672,6 +4696,10 @@ const TPL = (() => {
   }
 
   function openPlayer(key) {
+    /* Friday's session must resolve against home gear for the whole player session, including
+       the swap list, not just the first render. */
+    const di = ST.planDays.indexOf(key);
+    ACTIVE_DAY = di >= 0 ? di : null;
     /* startedAt is recorded so a saved session can be aligned with Apple Health
        heart-rate samples. Previously only the completion time was kept.
        A same-day draft is resumed here — which is what finally makes the "Continue" button
