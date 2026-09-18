@@ -373,7 +373,7 @@ svg.still { width: 100%; background: var(--bg3); border: 1px solid var(--line); 
 
 <div id="scr-more" class="hidden">
   <div class="top"><div class="top-text"><h1>More</h1><div class="sub">safety, your videos, your data</div>
-    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-18 10:51 UTC · b5b3d05</div></div>
+    <div class="sub" style="margin-top:2px;opacity:.6">build 2026-09-18 15:28 UTC · 16526b1</div></div>
     <button class="top-back" data-back aria-label="Back to Today">&#8249;</button></div>
   <div class="screen">
     <div class="card"><h3>&#x1FA78; Blood pressure rules</h3><ul class="safety" id="more-safety"></ul></div>
@@ -1780,6 +1780,10 @@ const SESSIONS = {
       /* was core_flex — loaded rotation (oblique crunch / bicycle / woodchop), which is
          held back during Phase 1 per PLAN_REVIEW.md §4. Anti-flexion bracing instead. */
       { slot: 'core_brace',sets: 2, target: 10, rest: 45 },
+      /* shoulder external rotation, moved here from the old Thursday back session. It is the
+         only piece of that session no strength day already carried, and it belongs on the
+         push day - rotator-cuff prehab next to the pressing that loads it. */
+      { slot: 'rot_out',   sets: 2, target: 10, rest: 30 },
       { slot: 'carry',     sets: 3, target: 60, rest: 60 },
       /* cooldown — targets what was just loaded: pecs, rear delts, hamstrings, hip flexors, spine from carries */
       { ex: 'cooldown_walk_easy',          sets: 1, target: 3,  rest: 0 },
@@ -1803,10 +1807,13 @@ const SESSIONS = {
       { slot: 'hip_ext',   sets: 3, target: 12, rest: 60 },
       { slot: 'core_anti', sets: 3, target: 30, rest: 60 },
       { ex: 'bird_dog',    sets: 2, target: 8,  rest: 45 },
-      /* added 2026-09-17: the back day had a hinge and a bird dog but no EXTENSION
-         work at all, which is the half of the protocol that rebuilds the muscles that
-         failed. Superman resolves on the mat at home and in the gym alike. */
-      { slot: 'back_ext',  sets: 2, target: 8,  rest: 45 },
+      /* added 2026-09-17: the back day had a hinge and a bird dog but no EXTENSION work at
+         all, which is the half of the protocol that rebuilds the muscles that failed.
+         Named EXPLICITLY as superman rather than left as slot 'back_ext': that slot's first
+         pick is bird_dog, so the session was prescribing bird dog twice over - once here and
+         once eight lines up. The intent was the extension half of the protocol, which is
+         superman. Bodyweight, so it resolves at home and in the gym alike. */
+      { ex: 'superman',    sets: 2, target: 8,  rest: 45 },
       /* cooldown — targets what was just loaded: lats/shoulders from pull-up/OHP, hamstrings from hinges, hip flexors from lunges, spine from hinges */
       { ex: 'cooldown_walk_easy',          sets: 1, target: 3,  rest: 0 },
       { ex: 'lat_overhead_stretch',        sets: 1, target: 30, rest: 0 },
@@ -2076,7 +2083,26 @@ const WALK = { title: 'Daily walk (after Fajr)', icon: 'walk', color: '#4a9d6b',
 
    WEEK_V1 and WEEK_V2 exist purely so the migration in app.js can tell an untouched week from
    one you edited by hand in the Plan tab. */
-const WEEK = ['strengthA', 'martial', 'strengthB', 'back1', 'strengthC', 'ems', 'rest'];
+/* The week follows the interim template in COACHING_REVIEW_2026-09-18.md §2, which flagged
+   that Wed-Sat had become FOUR consecutive physical stimuli with a single rest day behind
+   them. Two things were wrong and both are now fixed:
+
+     Thursday was a standalone back session sitting directly after Wednesday's back day.
+     Fatigue cuts motor control, which is the opposite of what a back protocol needs, so
+     Thursday is recovery - and recovery is real here: the daily walk and morning mobility
+     are separate cards on the Today screen, so a `rest` day still gets them.
+
+     Friday was a strength session immediately before Saturday's EMS. EMS is full-body, so
+     that is stacking gym work onto the same muscles instead of arriving fresh and getting
+     the session's full benefit. PLAN_REVIEW.md already said "do not stack gym work on it".
+
+   The back ladder is NOT lost. It is folded into the strength days: strengthB is the Phase 1
+   back day and already carries the hinge, hip extension, anti-flexion bracing, bird dog and
+   back extension the ladder was built around, and strengthA carries the bracing. The one
+   movement no strength day had - shoulder external rotation - moved to strengthA below.
+   back1/back2/back3 remain as the stage progression for that work; they are deliberately out
+   of the week because COACHING_REVIEW §5 says progression is not ready to be automatic. */
+const WEEK = ['strengthA', 'martial', 'strengthB', 'rest', 'rest', 'ems', 'rest'];
 
 /* Where each day is meant to happen - Mon..Sun.
    Friday is a HOME day by plan, not by accident: the gym does not open until 13:00 and a
@@ -2088,6 +2114,8 @@ const DAY_VENUE = ['auto', 'auto', 'auto', 'auto', 'home', 'auto', 'auto'];
 
 /* True when this weekday is pinned to home equipment. */
 function isHomeDay(dayIdx) { return DAY_VENUE[dayIdx] === 'home'; }
+/* the Wed-Sat four-consecutive-stimuli week, replaced by COACHING_REVIEW 2026-09-18 §2 */
+const WEEK_V3 = ['strengthA', 'martial', 'strengthB', 'back1', 'strengthC', 'ems', 'rest'];
 const WEEK_V2 = ['strengthA', 'martial', 'strengthB', 'cardio1', 'strengthC', 'ems', 'rest'];
 const WEEK_V1 = ['strengthA', 'cardio1', 'strengthB', 'martial', 'strengthC', 'cardio2', 'rest'];
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -3764,6 +3792,27 @@ const TPL = (() => {
       for (const k of ['strengthB', 'cardio1']) delete ST.sessionOverrides[k];
     }
     ST.schema = 4;
+    saveState();
+  }
+
+  /* --- schema migration v5 -----------------------------------------------------------
+     Plan v4: the interim template from COACHING_REVIEW_2026-09-18.md §2. Thursday was a
+     standalone back session directly after Wednesday's back day, and Friday strength sat
+     immediately before Saturday's EMS - four consecutive physical stimuli with one rest day
+     behind them. Both become rest. The back ladder is folded into the strength days rather
+     than dropped (see WEEK in data.js).
+
+     Same contract as v4: planDays is persisted, so this only reaches an existing device
+     through a migration, and only when the stored week still matches an untouched WEEK_V1,
+     V2 or V3. A week edited by hand in the Plan tab is left alone. strengthA changed shape,
+     so its override is cleared; anything else saved by hand survives. */
+  if ((ST.schema || 1) < 5) {
+    const untouchedWeek = [WEEK_V1, WEEK_V2, WEEK_V3].some(w => JSON.stringify(ST.planDays) === JSON.stringify(w));
+    if (untouchedWeek) ST.planDays = WEEK.slice();
+    if (ST.sessionOverrides) {
+      for (const k of ['strengthA']) delete ST.sessionOverrides[k];
+    }
+    ST.schema = 5;
     saveState();
   }
 
